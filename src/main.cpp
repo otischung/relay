@@ -219,7 +219,7 @@ void loop() {
     Serial.println("");
     end = millis();
     period = end - start;
-    remain = 1000 > period ? 1000 - period : 940;
+    remain = 1000 > period ? 1000 - period : 0;
     // Serial.println(start);
     // Serial.println(end);
     // Serial.println(period);
