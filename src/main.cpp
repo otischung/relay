@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <DHT12.h>
 #include <ESP8266WiFi.h>
+#include <LiquidCrystal_I2C.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <time.h>
@@ -19,26 +20,29 @@
  * gmtime();        // time_t to struct tm *
  * mktime();        // sturct tm * to time_t
  * ref: https://bryceknowhow.blogspot.com/2013/10/cc-gmtimemktimetimetstruct-tm.html
+ * ESP8266:
+ * SDA = GPIO4 D2
+ * SCL = GPIO5 D1
  *************************************************/
 
 const uint32_t CpuFreq = ESP.getCpuFreqMHz() * 1000000;
 const String daysOfTheWeek[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 const uint8_t relay_D5 = 14;         // GPIO14 D5
 const uint8_t relay_D6 = 12;         // GPIO12 D6
-const uint8_t DHT12_DATA_PIN_D2 = 4; // GPIO4 D2
-const uint8_t DHT12_CLK_PIN_D1 = 5;  // GPIO5 D1
 const char *ssid = "Do you want to connect to WiFi";
 const char *passwd = "2.71828182845904523536";
 const long utcOffsetInSeconds = +8 * 3600;
 WiFiUDP ntpudp;
 NTPClient timeClient(ntpudp, "pool.ntp.org", utcOffsetInSeconds);
 DHT12 dht12(&Wire);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 float t12, h12;
 int8_t dht12_status;
 struct tm currentTime;
 time_t currentTimestamp;
 uint32_t refreshTimeCnt = DEFAULT_REFRESH_TIME_CNT;
 uint64_t CycleCount;
+unsigned long start, end, period, remain;
 
 void printTime() {
     Serial.print(currentTime.tm_year + 1900);
@@ -54,9 +58,19 @@ void printTime() {
     Serial.print(currentTime.tm_min);
     Serial.print(":");
     Serial.println(currentTime.tm_sec);
+    lcd.print(currentTime.tm_mon + 1);
+    lcd.print(".");
+    lcd.print(currentTime.tm_mday);
+    lcd.print(", ");
+    lcd.print(currentTime.tm_hour);
+    lcd.print(":");
+    lcd.print(currentTime.tm_min);
+    lcd.print(":");
+    lcd.print(currentTime.tm_sec);
 }
 
 void updateTime() {
+    lcd.setCursor(0, 0);
     if (WiFi.status() == WL_CONNECTED && refreshTimeCnt == DEFAULT_REFRESH_TIME_CNT) {
         Serial.print("WiFi is connected, refresh time count = ");
         Serial.print(refreshTimeCnt);
@@ -125,44 +139,40 @@ void updateRelayStatus() {
     } else {                                       // otherwise
         digitalWrite(relay_D6, LOW);               // close relay 2 D6
     }
-
-    // Just for testing.
-    // digitalWrite(relay_D5, HIGH);
-    // Serial.println("D1 On");
-    // delay(250);
-    // digitalWrite(relay_D6, HIGH);
-    // Serial.println("D2 On");
-    // delay(250);
-    // digitalWrite(relay_D5, LOW);
-    // Serial.println("D1 Off");
-    // delay(250);
-    // digitalWrite(relay_D6, LOW);
-    // Serial.println("D2 Off");
-    // delay(250);
 }
 
 void updateDHT12Status() {
     dht12_status = dht12.read();
+    lcd.setCursor(0, 1);
     switch (dht12_status) {
     case DHT12_OK:
         t12 = dht12.getTemperature();
         h12 = dht12.getHumidity();
         Serial.print("Temp: ");
         Serial.print(t12, 1);
-        Serial.print(", Humidity: ");
-        Serial.println(h12, 1);
+        Serial.print("°C, Humidity: ");
+        Serial.print(h12, 1);
+        Serial.println("%");
+        lcd.print(t12, 1);
+        lcd.print("C, ");
+        lcd.print(h12, 1);
+        lcd.print("%");
         break;
     case DHT12_ERROR_CHECKSUM:
         Serial.println("DHT12: Checksum error.");
+        lcd.print("DHT CHKSUM ERR");
         break;
     case DHT12_ERROR_CONNECT:
         Serial.println("DHT12: Connect error.");
+        lcd.print("DHT Connect ERR");
         break;
     case DHT12_MISSING_BYTES:
         Serial.println("DHT12: Missing bytes.");
+        lcd.print("DHT Miss Byte");
         break;
     default:
         Serial.println("DHT12: Unknown error.");
+        lcd.print("DHT Unknown ERR");
         break;
     }
 }
@@ -174,24 +184,41 @@ void setup() {
     Serial.begin(9600);
     pinMode(relay_D5, OUTPUT);
     pinMode(relay_D6, OUTPUT);
+    dht12.begin(SDA, SCL);
+    lcd.begin(16, 2);
+    lcd.backlight();
+    lcd.clear();
     WiFi.begin(ssid, passwd);
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
+        lcd.setCursor(0, 0);
+        lcd.print("Connecting WiFi");
     }
     Serial.print("\nSuccess to connect to ");
     Serial.println(ssid);
+    lcd.clear();
+    lcd.print("Connected");
     timeClient.begin();
-    dht12.begin(DHT12_DATA_PIN_D2, DHT12_CLK_PIN_D1);
 }
 
 void loop() {
     // put your main code here, to run repeatedly:
+    start = millis();
+    lcd.clear();
     updateTime();
     updateRelayStatus();
     updateDHT12Status();
+    if (WiFi.status() == WL_CONNECTED) {
+        lcd.print(" ON");
+    } else {
+        lcd.print(" OFF");
+    }
     Serial.print("CPU cycle cnt: ");
     Serial.println(ESP.getCycleCount());
     Serial.println("");
-    delay(993);
+    end = millis();
+    period = end - start;
+    remain = 1000 - period;
+    delay(remain);
 }
